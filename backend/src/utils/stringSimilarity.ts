@@ -34,3 +34,27 @@ export function calculateStringSimilarity(str1: string, str2: string): number {
     return 1 - distance / maxLen;
   }
   
+/**
+ * Calculates the distance between two coordinates in meters using the Haversine formula
+ * @param coord1 First coordinate {lat, lng}
+ * @param coord2 Second coordinate {lat, lng}
+ * @returns Distance in meters
+ */
+export function calculateDistance(
+  coord1: { lat: number; lng: number },
+  coord2: { lat: number; lng: number }
+): number {
+  const R = 6371e3; // Earth's radius in meters
+  const φ1 = (coord1.lat * Math.PI) / 180;
+  const φ2 = (coord2.lat * Math.PI) / 180;
+  const Δφ = ((coord2.lat - coord1.lat) * Math.PI) / 180;
+  const Δλ = ((coord2.lng - coord1.lng) * Math.PI) / 180;
+
+  const a =
+    Math.sin(Δφ / 2) * Math.sin(Δφ / 2) +
+    Math.cos(φ1) * Math.cos(φ2) * Math.sin(Δλ / 2) * Math.sin(Δλ / 2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+
+  return R * c; // Distance in meters
+}
+  

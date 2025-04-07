@@ -1,13 +1,20 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { connectToDatabase } from "@/lib/mongodb"; 
 import { calculateStringSimilarity } from "@/utils/stringSimilarity";
-import { getMenuContext, storeMenuContext } from "@/lib/menuService";
-import { checkGoogleMapsRestaurant, getNearbyRestaurants } from "@/lib/mapsService";
 import { findBestMatchingMenu } from "@/utils/menuMatcher";
-import { storeRestaurantInfo } from "@/lib/restaurantService";
-import { requestCameraCapture } from "@/lib/cameraUploadData";
+import { checkGoogleMapsRestaurant, getNearbyRestaurants } from "@/lib/mapsService";
+import { getMenuContext, storeRestaurantWithMenu } from "@/lib/restaurantService";
+import { requestCameraCapture, processImageWithGemini, processCameraImage } from "@/lib/cameraUploadData";
+import { GoogleGenerativeAI } from "@google/generative-ai";
 
 const GOOGLE_MAPS_API_KEY = process.env.GOOGLE_MAPS_API_KEY!;
+
+// Initialize Gemini AI model
+if(!process.env.GEMINI_API_KEY){
+    throw new Error("GEMINI_API_KEY not found in environment variables")
+}
+const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
+const model = genAI.getGenerativeModel({model:"gemini-1.5-flash"});
 
 /**
  * GET endpoint to retrieve menu data for a specific restaurant and location
@@ -62,8 +69,11 @@ export async function GET(req: NextRequest) {
       );
     }
 
-    // Return the menu data
-    return NextResponse.json(menuContext);
+    // Return the menu data with explicit apimatch field
+    return NextResponse.json({
+      ...menuContext,
+      apimatch: menuContext.apimatch || 'none'
+    });
   } catch (error) {
     console.error('Error fetching menu:', error);
     return NextResponse.json(
@@ -73,39 +83,93 @@ export async function GET(req: NextRequest) {
   }
 }
 
+/**
+ * POST endpoint to find nearby restaurants with menu data
+ * 
+ * @param {Request} request - The incoming request containing location and source
+ * @returns {Promise<NextResponse>} JSON response containing nearby restaurants with menu data
+ */
 export async function POST(request: Request) {
   try {
-    const { location, source } = await request.json();
+    const { imageData, restaurantName, location } = await request.json();
+
+    // Process the image to extract menu data
+    const cameraData = await processCameraImage(imageData);
     
-    if (!location) {
+    // Store the restaurant and menu data
+    const success = await storeRestaurantWithMenu({
+      restaurantName,
+      location,
+      menuItems: cameraData.menuItems,
+      source: 'camera'
+    });
+
+    if (!success) {
+      return NextResponse.json({ error: "Failed to store restaurant data" }, { status: 500 });
+    }
+
+    // Get the stored menu context
+    const menuContext = await getMenuContext(restaurantName, location);
+    
+    if (!menuContext) {
+      return NextResponse.json({ error: "Failed to retrieve menu context" }, { status: 500 });
+    }
+
+    // Find the best matching menu
+    const bestMatch = findBestMatchingMenu(cameraData.menuItems, menuContext.menuItems);
+
+    return NextResponse.json({ success: true, bestMatch });
+  } catch (error) {
+    console.error("Error processing camera image:", error);
+    return NextResponse.json({ error: "Failed to process image" }, { status: 500 });
+  }
+}
+
+/**
+ * POST endpoint to process and store menu data
+ * Can handle both camera-processed images and manual menu data
+ * 
+ * @param {Request} request - The incoming request containing menu data
+ * @returns {Promise<NextResponse>} JSON response containing processed menu data
+ */
+export async function POST_ALLERGEN(request: Request) {
+  try {
+    const { image, restaurantName, latitude, longitude, source } = await request.json();
+
+    if (!image || !restaurantName || latitude == undefined || longitude == undefined || !source) {
       return NextResponse.json(
-        { error: 'Location is required' },
+        { error: "Missing required fields (image, restaurantName, latitude, longitude, source)" },
         { status: 400 }
       );
     }
 
-    // Get nearby restaurants from Google Maps
-    const nearbyRestaurants = await getNearbyRestaurants(location);
+    // Extract base64 data from image
+    const base64Image = image.includes(',') ? image.split(',')[1] : image;
     
-    // For each restaurant, get its menu context if it exists
-    const restaurantsWithMenus = await Promise.all(
-      nearbyRestaurants.map(async (restaurant) => {
-        const menuContext = await getMenuContext(restaurant.name, restaurant.location);
-        return {
-          ...restaurant,
-          menuContext: menuContext || null
-        };
-      })
-    );
+    // Process image with Gemini AI
+    const menuItems = await processImageWithGemini(base64Image);
+
+    // Create menu data object
+    const menuData = {
+      success: true,
+      message: 'Menu captured successfully',
+      restaurantName: restaurantName,
+      location: { lat: latitude, lng: longitude },
+      menuItems: menuItems,
+      source: source
+    };
+
+    // Store restaurant data
+    const stored = await storeRestaurantWithMenu(menuData);
 
     return NextResponse.json({
-      location,
-      restaurants: restaurantsWithMenus
+      ...menuData,
+      stored: stored
     });
   } catch (error) {
-    console.error('Error in POST /api/maps:', error);
+    console.log("[POST/allergen] Request failed", error);
     return NextResponse.json(
-      { error: 'Internal server error' },
+      { message: "error" },
       { status: 500 }
     );
   }

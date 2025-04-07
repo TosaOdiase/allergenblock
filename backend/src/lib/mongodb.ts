@@ -1,28 +1,53 @@
-import { MongoClient, ServerApiVersion } from "mongodb";
+// lib/mongodb.ts
+import { MongoClient, Db, ServerApiVersion } from 'mongodb';
 
-const uri = process.env.MONGODB_URI!;
-const options = {
-  serverApi: {
-    version: ServerApiVersion.v1,
-    strict: true,
-    deprecationErrors: true,
-  },
-};
+const uri = process.env.MONGODB_URI;
+if (!uri) {
+  throw new Error('Missing MONGODB_URI in .env or environment variables');
+}
+
+// After the check, we know uri is string
+const mongoUri: string = uri;
 
 let client: MongoClient;
-let clientPromise: Promise<MongoClient>;
+let clientPromise: Promise<MongoClient> | null = null;
 
-declare global {
-  var _mongoClientPromise: Promise<MongoClient>;
+/**
+ * Returns a cached MongoClient, or creates a new one if needed.
+ */
+function getMongoClient(): Promise<MongoClient> {
+  if (!clientPromise) {
+    client = new MongoClient(mongoUri, {
+      serverApi: {
+        version: ServerApiVersion.v1,
+        strict: true,
+        deprecationErrors: true,
+      },
+    });
+    clientPromise = client.connect();
+  }
+  return clientPromise;
 }
 
-if (!global._mongoClientPromise) {
-  client = new MongoClient(uri, options);
-  global._mongoClientPromise = client.connect();
-}
-clientPromise = global._mongoClientPromise;
+/**
+ * Returns the default database from the Mongo client.
+ */
+export async function connectToDatabase(): Promise<Db> {
+  // Check if the DB name is provided
+  const dbName = process.env.MONGODB_DB;
+  if (!dbName) {
+    throw new Error('Missing MONGODB_DB in .env or environment variables');
+  }
 
-export async function connectToDatabase() {
-  const client = await clientPromise;
-  return client.db("MenuCatalog");
+  const mongoClient = await getMongoClient();
+  const db = mongoClient.db(dbName);
+  
+  // Create geospatial index if it doesn't exist
+  try {
+    await db.collection("restaurants").createIndex({ location: "2dsphere" });
+  } catch (error) {
+    console.error('Error creating geospatial index:', error);
+  }
+  
+  return db;
 }

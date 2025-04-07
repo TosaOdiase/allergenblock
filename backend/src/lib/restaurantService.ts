@@ -1,63 +1,113 @@
 import { connectToDatabase } from "./mongodb";
 import { checkGoogleMapsRestaurant } from "./mapsService";
-import { storeMenuContext } from "./menuService";
+import { calculateStringSimilarity, calculateDistance } from "../utils/stringSimilarity";
+import { findBestMatchingMenu } from "../utils/menuMatcher";
+import { RESTAURANT_SIMILARITY_THRESHOLD, RESTAURANT_DISTANCE_THRESHOLD } from "@/utils/constants";
+
+// Generic interface for menu data from any source
+interface MenuData {
+  restaurantName: string;
+  location: { lat: number; lng: number };
+  menuItems: Array<{ name: string; allergens: string[] }>;
+  source: 'camera' | 'manual';
+}
 
 /**
- * Stores restaurant information and menu context in MongoDB
- * @param restaurantName - Name of the restaurant from camera
- * @param location - Location coordinates from camera
- * @param menuItems - Array of menu items with allergens from camera
- * @param source - Source of the data (must be 'camera' for storage)
+ * Gets menu data for a restaurant
  */
-export async function storeRestaurantInfo(
+export async function getMenuContext(
   restaurantName: string,
-  location: {lat: number, lng: number},
-  menuItems: Array<{name: string, allergens: string[]}>,
-  source: 'camera' | 'manual'
+  location: { lat: number; lng: number }
 ) {
-  try {
-    // Only proceed with storage if the source is from camera
-    if (source !== 'camera') {
-      console.log('Skipping storage - data not from camera:', { restaurantName, source });
-      return;
-    }
+  const db = await connectToDatabase();
+  
+  // First try exact match
+  const exactMatch = await db.collection("restaurants").findOne({
+    restaurantName,
+    location: {
+      $near: {
+        $geometry: { type: "Point", coordinates: [location.lng, location.lat] },
+        $maxDistance: RESTAURANT_DISTANCE_THRESHOLD,
+      },
+    },
+  });
 
+  if (exactMatch) return exactMatch;
+
+  // If no exact match, try similar names within distance
+  const allRestaurants = await db.collection("restaurants").find({}).toArray();
+  
+  return allRestaurants.find(restaurant => {
+    const nameSimilarity = calculateStringSimilarity(restaurant.restaurantName, restaurantName);
+    const distance = calculateDistance(
+      { lat: restaurant.location.coordinates[1], lng: restaurant.location.coordinates[0] },
+      location
+    );
+    
+    return nameSimilarity >= RESTAURANT_SIMILARITY_THRESHOLD && distance <= RESTAURANT_DISTANCE_THRESHOLD;
+  });
+}
+
+/**
+ * Stores restaurant information with menu data
+ */
+export async function storeRestaurantWithMenu(
+  menuData: MenuData
+): Promise<boolean> {
+  try {
     const db = await connectToDatabase();
     
-    // First verify if the restaurant exists in Google Maps at this location
-    const exists = await checkGoogleMapsRestaurant(restaurantName, location);
+    // Check Google Maps for restaurant match
+    const googleMatch = await checkGoogleMapsRestaurant(menuData.restaurantName, menuData.location);
     
-    if (exists) {
-      // Restaurant exists in Google Maps at this location
-      // Only store the menu context, don't store restaurant info
-      console.log('Restaurant found in Google Maps, only storing menu context:', restaurantName);
-      await storeMenuContext(restaurantName, location, menuItems);
-    } else {
-      // Restaurant not found in Google Maps at this location
-      // Store both restaurant info and menu context
-      console.log('Restaurant not found in Google Maps, storing both restaurant info and menu context:', restaurantName);
+    // Find restaurants with similar names
+    const existingRestaurants = await db.collection("restaurants").find({}).toArray();
+    
+    // Check for similar restaurants within distance threshold
+    const similarRestaurant = existingRestaurants.find(restaurant => {
+      const nameSimilarity = calculateStringSimilarity(restaurant.restaurantName, menuData.restaurantName);
+      const distance = calculateDistance(
+        { lat: restaurant.location.coordinates[1], lng: restaurant.location.coordinates[0] },
+        menuData.location
+      );
       
-      // Store restaurant information
-      await db.collection("restaurants").insertOne({
-        restaurantName,
-        location: {
-          type: "Point",
-          coordinates: [location.lng, location.lat]
-        },
-        source: 'camera',
-        createdAt: new Date(),
-        updatedAt: new Date()
-      });
+      return nameSimilarity >= RESTAURANT_SIMILARITY_THRESHOLD && distance <= RESTAURANT_DISTANCE_THRESHOLD;
+    });
 
-      // Store menu context
-      await storeMenuContext(restaurantName, location, menuItems);
+    const restaurantData = {
+      restaurantName: menuData.restaurantName,
+      location: {
+        type: "Point",
+        coordinates: [menuData.location.lng, menuData.location.lat]
+      },
+      menuItems: menuData.menuItems,
+      source: menuData.source,
+      apimatch: googleMatch.found ? 'google' : 'none',
+      ...(googleMatch.googlePlace && { googlePlace: googleMatch.googlePlace }),
+      updatedAt: new Date()
+    };
+
+    if (similarRestaurant) {
+      // Update existing restaurant with new menu data
+      console.log('Similar restaurant found, updating menu data:', menuData.restaurantName);
+      await db.collection("restaurants").updateOne(
+        { _id: similarRestaurant._id },
+        { $set: restaurantData }
+      );
+    } else {
+      // Create new restaurant document with menu data
+      console.log('Creating new restaurant document:', menuData.restaurantName);
+      await db.collection("restaurants").insertOne({
+        ...restaurantData,
+        createdAt: new Date()
+      });
     }
     
-    console.log('Successfully processed restaurant data from camera:', restaurantName);
+    console.log('Successfully stored restaurant data:', menuData.restaurantName);
     return true;
   } catch (error) {
-    console.error('Error processing restaurant data:', error);
-    throw error;
+    console.error('Error storing restaurant data:', error);
+    return false;
   }
 }
 

@@ -6,8 +6,7 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint",
-    "test:similarity": "ts-node src/app/api/tests/stringSimilarityTest.ts"
+    "lint": "next lint"
   },
   "dependencies": {
     "react": "^19.0.0",

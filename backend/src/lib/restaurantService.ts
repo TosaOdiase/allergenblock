@@ -8,7 +8,7 @@ import { RESTAURANT_SIMILARITY_THRESHOLD, RESTAURANT_DISTANCE_THRESHOLD } from "
 interface MenuData {
   restaurantName: string;
   location: { lat: number; lng: number };
-  menuItems: Array<{ name: string; allergens: string[] }>;
+  menuItems: Array<{ name: string; allergens: string[]; certainty: number }>;
   source: 'camera' | 'manual';
 }
 
@@ -80,7 +80,11 @@ export async function storeRestaurantWithMenu(
         type: "Point",
         coordinates: [menuData.location.lng, menuData.location.lat]
       },
-      menuItems: menuData.menuItems,
+      menuItems: menuData.menuItems.map(item => ({
+        name: item.name,
+        allergens: item.allergens,
+        certainty: item.certainty
+      })),
       source: menuData.source,
       apimatch: googleMatch.found ? 'google' : 'none',
       ...(googleMatch.googlePlace && { googlePlace: googleMatch.googlePlace }),

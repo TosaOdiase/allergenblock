@@ -47,19 +47,21 @@ export async function GET(req: NextRequest) {
     const restaurantName = searchParams.get('restaurantName');
     const lat = searchParams.get('lat');
     const lng = searchParams.get('lng');
+    const restaurantId = searchParams.get('restaurantId');
 
     // Validate required parameters
-    if (!restaurantName || !lat || !lng) {
+    if ((!restaurantName || !lat || !lng) && !restaurantId) {
       return NextResponse.json(
-        { error: 'Restaurant name, latitude, and longitude are required' },
+        { error: 'Either restaurantId or restaurant name with location are required' },
         { status: 400 }
       );
     }
 
     // Get menu context using the service function
     const menuContext = await getMenuContext(
-      restaurantName,
-      { lat: parseFloat(lat), lng: parseFloat(lng) }
+      restaurantName || '',
+      { lat: parseFloat(lat || '0'), lng: parseFloat(lng || '0') },
+      restaurantId || undefined
     );
 
     if (!menuContext) {
@@ -100,7 +102,10 @@ export async function POST(request: Request) {
     const success = await storeRestaurantWithMenu({
       restaurantName,
       location,
-      menuItems: cameraData.menuItems,
+      menuItems: cameraData.menuItems.map(item => ({
+        ...item,
+        certainty: 1.0
+      })),
       source: 'camera'
     });
 

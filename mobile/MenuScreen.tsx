@@ -1,12 +1,12 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   View,
   Text,
   StyleSheet,
   FlatList,
-  Image,
   TouchableOpacity,
   Dimensions,
+  ActivityIndicator,
 } from 'react-native';
 import {
   TapGestureHandler,
@@ -23,15 +23,14 @@ import Animated, {
   runOnJS,
 } from 'react-native-reanimated';
 import { useNavigation, useRoute } from '@react-navigation/native';
+import { BASE_URL } from './config'; // Ensure this file holds your machine's IP
 
 const { width } = Dimensions.get('window');
-
 const userAllergies = ['peanuts', 'gluten', 'dairy'];
 
 interface MenuItem {
   id: string;
   name: string;
-  image: string;
   allergens: string[];
 }
 
@@ -42,36 +41,39 @@ export default function MenuScreen() {
     restaurant: { id: string; name: string };
   };
 
-  const menu: MenuItem[] = (() => {
-    switch (restaurant.id) {
-      case '1':
-        return [
-          { id: '1', name: 'Spicy Chicken Wings', image: 'https://i.imgur.com/Oj1bZbM.jpg', allergens: ['peanuts', 'soy'] },
-          { id: '2', name: 'Garlic Fries', image: 'https://i.imgur.com/bVnABFe.jpg', allergens: ['gluten'] },
-          { id: '3', name: 'Coleslaw', image: 'https://i.imgur.com/fnNnRkD.jpg', allergens: [] },
-        ];
-      case '2':
-        return [
-          { id: '1', name: 'Taco al Pastor', image: 'https://i.imgur.com/m4VQpsa.jpg', allergens: ['gluten'] },
-          { id: '2', name: 'Quesadilla', image: 'https://i.imgur.com/UZFJYUl.jpg', allergens: ['dairy'] },
-          { id: '3', name: 'Guacamole & Chips', image: 'https://i.imgur.com/TvYUSsC.jpg', allergens: [] },
-        ];
-      case '3':
-        return [
-          { id: '1', name: 'Stuffed Mushrooms', image: 'https://i.imgur.com/eW1bYHc.jpg', allergens: ['dairy'] },
-          { id: '2', name: 'Margherita Flatbread', image: 'https://i.imgur.com/OMp4B1D.jpg', allergens: ['gluten', 'dairy'] },
-          { id: '3', name: 'Mixed Greens Salad', image: 'https://i.imgur.com/3aUahN5.jpg', allergens: [] },
-        ];
-      case '4':
-        return [
-          { id: '1', name: 'Hummus Platter', image: 'https://i.imgur.com/LpWfHz6.jpg', allergens: [] },
-          { id: '2', name: 'Falafel Wrap', image: 'https://i.imgur.com/E0gKcm3.jpg', allergens: ['gluten'] },
-          { id: '3', name: 'Lentil Soup', image: 'https://i.imgur.com/fnNnRkD.jpg', allergens: [] },
-        ];
-      default:
-        return [];
-    }
-  })();
+  const [menu, setMenu] = useState<MenuItem[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const fetchMenu = async () => {
+      try {
+        const res = await fetch(`${BASE_URL}/api/menuDetails/${restaurant.id}`);
+        if (!res.ok) {
+          throw new Error(`HTTP error! status: ${res.status}`);
+        }
+        const text = await res.text();
+        try {
+          const data = JSON.parse(text);
+          const mapped = data.menuItems.map((item: any, index: number) => ({
+            id: index.toString(),
+            name: item.name,
+            allergens: item.allergens || [],
+          }));
+          setMenu(mapped);
+        } catch (parseError) {
+          console.error("JSON Parse error:", text.substring(0, 100));
+          throw parseError;
+        }
+      } catch (error) {
+        console.error("Failed to fetch menu:", error);
+        setMenu([]);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchMenu();
+  }, []);
 
   const Card = ({ item }: { item: MenuItem }) => {
     const flipValue = useSharedValue(0);
@@ -86,7 +88,7 @@ export default function MenuScreen() {
       onActive: () => {
         'worklet';
         runOnJS(handleFlip)();
-      }
+      },
     });
 
     const flipAnimatedStyle = useAnimatedStyle(() => ({
@@ -108,15 +110,10 @@ export default function MenuScreen() {
     const hasAllergens = item.allergens.some(a => userAllergies.includes(a));
     const cardColor = hasAllergens ? 'rgba(255, 0, 0, 0.3)' : 'white';
 
-    const allergenText = item.allergens.map(a =>
-      userAllergies.includes(a) ? `**${a}**` : a
-    ).join(', ');
-
     return (
       <TapGestureHandler onGestureEvent={tapGesture}>
-        <Animated.View style={[styles.menuCard, flipAnimatedStyle, { backgroundColor: cardColor }]}>  
-          <Animated.View style={[styles.cardFace, frontStyle]}>          
-            <Image source={{ uri: item.image }} style={styles.menuImage} />
+        <Animated.View style={[styles.menuCard, flipAnimatedStyle, { backgroundColor: cardColor }]}>
+          <Animated.View style={[styles.cardFace, frontStyle]}>
             <View style={styles.menuTextContainer}>
               <Text style={styles.menuItemName}>{item.name}</Text>
               <Text style={styles.menuItemAllergens}>
@@ -144,12 +141,17 @@ export default function MenuScreen() {
       </TouchableOpacity>
 
       <Text style={styles.header}>{restaurant.name} Menu</Text>
-      <FlatList
-        data={menu}
-        renderItem={({ item }) => <Card item={item} />}
-        keyExtractor={(item) => item.id}
-        contentContainerStyle={styles.scrollView}
-      />
+
+      {loading ? (
+        <ActivityIndicator size="large" color="#000" style={{ marginTop: 50 }} />
+      ) : (
+        <FlatList
+          data={menu}
+          renderItem={({ item }) => <Card item={item} />}
+          keyExtractor={(item) => item.id}
+          contentContainerStyle={styles.scrollView}
+        />
+      )}
     </GestureHandlerRootView>
   );
 }
@@ -189,12 +191,6 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     padding: 10,
-  },
-  menuImage: {
-    width: 80,
-    height: 80,
-    borderRadius: 8,
-    marginRight: 10,
   },
   menuTextContainer: {
     flex: 1,

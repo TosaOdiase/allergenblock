@@ -3,6 +3,7 @@ import { checkGoogleMapsRestaurant } from "./mapsService";
 import { calculateStringSimilarity, calculateDistance } from "../utils/stringSimilarity";
 import { findBestMatchingMenu } from "../utils/menuMatcher";
 import { RESTAURANT_SIMILARITY_THRESHOLD, RESTAURANT_DISTANCE_THRESHOLD } from "@/utils/constants";
+import { ObjectId } from "mongodb";
 
 // Generic interface for menu data from any source
 interface MenuData {
@@ -17,9 +18,18 @@ interface MenuData {
  */
 export async function getMenuContext(
   restaurantName: string,
-  location: { lat: number; lng: number }
+  location: { lat: number; lng: number },
+  restaurantId?: string
 ) {
   const db = await connectToDatabase();
+  
+  // If restaurantId is provided, try to find the restaurant directly by ID
+  if (restaurantId) {
+    const restaurant = await db.collection("restaurants").findOne({
+      _id: new ObjectId(restaurantId)
+    });
+    if (restaurant) return restaurant;
+  }
   
   // First try exact match
   const exactMatch = await db.collection("restaurants").findOne({

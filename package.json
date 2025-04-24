@@ -1,0 +1,11 @@
+{
+  "name": "allergenblock",
+  "version": "1.0.0",
+  "scripts": {
+    "start": "concurrently \"cd backend && npm run dev\" \"cd mobile && npx expo start --tunnel\"",
+    "install-all": "npm install && cd backend && npm install && cd ../mobile && npm install"
+  },
+  "devDependencies": {
+    "concurrently": "^8.2.2"
+  }
+} 

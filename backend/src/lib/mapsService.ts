@@ -33,7 +33,7 @@ export async function getNearbyRestaurants(
     }
 
     // 2. Get our database restaurants
-    const db = await connectToDatabase();
+    const { db } = await connectToDatabase();
     const dbRestaurants = await db.collection("restaurants").find({}).toArray();
 
     // 3. Match Google Maps results with our database

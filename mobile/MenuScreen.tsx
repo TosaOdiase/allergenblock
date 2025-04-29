@@ -92,7 +92,7 @@ export default function MenuScreen() {
     });
 
     const flipAnimatedStyle = useAnimatedStyle(() => ({
-      transform: [{ rotateY: `${interpolate(flipValue.value, [0, 1], [0, 180])}deg` }],
+      transform: [{ rotateY: `${interpolate(flipValue.value, [0, 1], [0, 180])}deg` }] as any,
     }));
 
     const frontStyle = useAnimatedStyle(() => ({
@@ -102,7 +102,7 @@ export default function MenuScreen() {
 
     const backStyle = useAnimatedStyle(() => ({
       opacity: interpolate(flipValue.value, [0, 0.5, 1], [0, 0, 1]),
-      transform: [{ rotateY: '180deg' }],
+      transform: [{ rotateY: '180deg' }] as any,
       position: 'absolute',
       backfaceVisibility: 'hidden',
     }));

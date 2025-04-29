@@ -1,11 +1,13 @@
 // ✅ App.tsx
 import React from 'react';
 import { NavigationContainer } from '@react-navigation/native';
-import { createStackNavigator } from '@react-navigation/stack';
+import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import MenuScreen from './MenuScreen';
 import HomeScreen from './HomeScreen';
+import ProfileScreen from './ProfileScreen';
+import { RootStackParamList } from './types/navigation';
 
-const Stack = createStackNavigator();
+const Stack = createNativeStackNavigator<RootStackParamList>();
 
 export default function App() {
   return (
@@ -20,6 +22,11 @@ export default function App() {
           name="Menu"
           component={MenuScreen}
           options={{ title: 'Menu' }}
+        />
+        <Stack.Screen
+          name="Profile"
+          component={ProfileScreen}
+          options={{ title: 'Your Profile' }}
         />
       </Stack.Navigator>
     </NavigationContainer>

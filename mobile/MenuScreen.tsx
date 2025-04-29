@@ -23,10 +23,15 @@ import Animated, {
   runOnJS,
 } from 'react-native-reanimated';
 import { useNavigation, useRoute } from '@react-navigation/native';
+import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { BASE_URL } from './config'; // Ensure this file holds your machine's IP
+import { Pressable } from 'react-native';
+import * as Haptics from 'expo-haptics';
+import { RootStackParamList } from './types/navigation';
 
 const { width } = Dimensions.get('window');
-const userAllergies = ['peanuts', 'gluten', 'dairy'];
+
+type NavigationProp = NativeStackNavigationProp<RootStackParamList>;
 
 interface MenuItem {
   id: string;
@@ -35,7 +40,7 @@ interface MenuItem {
 }
 
 export default function MenuScreen() {
-  const navigation = useNavigation();
+  const navigation = useNavigation<NavigationProp>();
   const route = useRoute();
   const { restaurant } = route.params as {
     restaurant: { id: string; name: string };
@@ -43,6 +48,7 @@ export default function MenuScreen() {
 
   const [menu, setMenu] = useState<MenuItem[]>([]);
   const [loading, setLoading] = useState(true);
+  const [expandedIndex, setExpandedIndex] = useState<number | null>(null);
 
   useEffect(() => {
     const fetchMenu = async () => {
@@ -75,69 +81,68 @@ export default function MenuScreen() {
     fetchMenu();
   }, []);
 
-  const Card = ({ item }: { item: MenuItem }) => {
-    const flipValue = useSharedValue(0);
-    const isFlipped = useSharedValue(false);
+  // Simulated user allergen profile (replace with real user data in production)
+  const userAllergies = ['peanuts', 'gluten', 'dairy'];
 
-    const handleFlip = () => {
-      flipValue.value = withSpring(isFlipped.value ? 0 : 1);
-      isFlipped.value = !isFlipped.value;
-    };
-
-    const tapGesture = useAnimatedGestureHandler<GestureEvent<TapGestureHandlerEventPayload>>({
-      onActive: () => {
-        'worklet';
-        runOnJS(handleFlip)();
-      },
-    });
-
-    const flipAnimatedStyle = useAnimatedStyle(() => ({
-      transform: [{ rotateY: `${interpolate(flipValue.value, [0, 1], [0, 180])}deg` }] as any,
-    }));
-
-    const frontStyle = useAnimatedStyle(() => ({
-      opacity: interpolate(flipValue.value, [0, 0.5, 1], [1, 0, 0]),
-      backfaceVisibility: 'hidden',
-    }));
-
-    const backStyle = useAnimatedStyle(() => ({
-      opacity: interpolate(flipValue.value, [0, 0.5, 1], [0, 0, 1]),
-      transform: [{ rotateY: '180deg' }] as any,
-      position: 'absolute',
-      backfaceVisibility: 'hidden',
-    }));
-
-    const hasAllergens = item.allergens.some(a => userAllergies.includes(a));
-    const cardColor = hasAllergens ? 'rgba(255, 0, 0, 0.3)' : 'white';
+  const Card = ({ item, index }: { item: MenuItem; index: number }) => {
+    // Calculate actual allergen matches from the item's allergens
+    const matchCount = item.allergens.filter(a => userAllergies.includes(a)).length;
+    const isExpanded = expandedIndex === index && matchCount > 0;
+    const canExpand = matchCount > 0;
+    const [pressed, setPressed] = useState(false);
 
     return (
-      <TapGestureHandler onGestureEvent={tapGesture}>
-        <Animated.View style={[styles.menuCard, flipAnimatedStyle, { backgroundColor: cardColor }]}>
-          <Animated.View style={[styles.cardFace, frontStyle]}>
-            <View style={styles.menuTextContainer}>
-              <Text style={styles.menuItemName}>{item.name}</Text>
-              <Text style={styles.menuItemAllergens}>
-                {item.allergens.filter(a => userAllergies.includes(a)).length} allergen(s) match your profile
-              </Text>
-            </View>
-          </Animated.View>
-
-          <Animated.View style={[styles.cardFace, backStyle]}>
+      <Pressable
+        onPressIn={() => setPressed(true)}
+        onPressOut={() => setPressed(false)}
+        onPress={() => {
+          if (canExpand) {
+            setExpandedIndex(isExpanded ? null : index);
+            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+          }
+        }}
+        style={[styles.menuCard, { backgroundColor: pressed ? '#e0e0e6' : '#f2f2f7', minHeight: isExpanded ? 160 : 100 }]}
+        disabled={!canExpand}
+      >
+        <View style={styles.menuCardContent}>
+          <View style={styles.menuTextCenterer}>
             <Text style={styles.menuItemName}>{item.name}</Text>
-            <Text style={styles.menuItemAllergens}>Contains:</Text>
-            {item.allergens.map((a, i) => (
-              <Text key={i} style={{ fontWeight: userAllergies.includes(a) ? 'bold' : 'normal' }}>{a}</Text>
-            ))}
-          </Animated.View>
-        </Animated.View>
-      </TapGestureHandler>
+          </View>
+          <Text style={[
+            styles.menuItemAllergensCount,
+            matchCount === 0 ? { color: '#4CAF50' } : {}
+          ]}>
+            {matchCount === 0 ? 'No allergen matches' : `${matchCount} allergen(s) match your profile`}
+          </Text>
+          {isExpanded && (
+            <View style={styles.allergenListContainer}>
+              <View style={styles.allergenRow}>
+                <Text style={styles.menuItemAllergensExpanded}>Contains:</Text>
+                <Text style={[styles.allergenText, { marginLeft: 4 }]}>
+                  {item.allergens.map((allergen, index) => (
+                    <Text key={index}>
+                      {index > 0 ? ', ' : ''}
+                      <Text style={userAllergies.includes(allergen) ? { fontWeight: 'bold', color: '#ff4d4d' } : {}}>
+                        {allergen}
+                      </Text>
+                    </Text>
+                  ))}
+                </Text>
+              </View>
+            </View>
+          )}
+        </View>
+      </Pressable>
     );
   };
 
   return (
     <GestureHandlerRootView style={styles.container}>
-      <TouchableOpacity style={styles.backButton} onPress={() => navigation.goBack()}>
-        <Text style={styles.backText}>← Back to Home</Text>
+      <TouchableOpacity 
+        style={styles.profileButton}
+        onPress={() => navigation.navigate('Profile')}
+      >
+        <Text style={styles.profileIcon}>👤</Text>
       </TouchableOpacity>
 
       <Text style={styles.header}>{restaurant.name} Menu</Text>
@@ -147,7 +152,7 @@ export default function MenuScreen() {
       ) : (
         <FlatList
           data={menu}
-          renderItem={({ item }) => <Card item={item} />}
+          renderItem={({ item, index }) => <Card item={item} index={index} />}
           keyExtractor={(item) => item.id}
           contentContainerStyle={styles.scrollView}
         />
@@ -159,14 +164,14 @@ export default function MenuScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    paddingTop: 60,
+    paddingTop: 70,
     backgroundColor: '#fff',
     alignItems: 'center',
   },
   header: {
     fontSize: 22,
     fontWeight: 'bold',
-    marginBottom: 10,
+    marginBottom: 15,
     alignSelf: 'center',
   },
   scrollView: {
@@ -178,7 +183,7 @@ const styles = StyleSheet.create({
     height: 100,
     marginBottom: 20,
     borderRadius: 10,
-    backgroundColor: '#fff',
+    backgroundColor: '#f2f2f7',
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.1,
@@ -186,32 +191,73 @@ const styles = StyleSheet.create({
     elevation: 3,
     justifyContent: 'center',
     alignItems: 'center',
+    overflow: 'hidden',
   },
-  cardFace: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    padding: 10,
-  },
-  menuTextContainer: {
+  menuCardContent: {
     flex: 1,
+    width: '100%',
+    justifyContent: 'center',
+    alignItems: 'center',
+    position: 'relative',
+  },
+  menuTextCenterer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    width: '100%',
   },
   menuItemName: {
-    fontSize: 18,
+    fontSize: 20,
     fontWeight: '600',
+    textAlign: 'center',
+    marginBottom: 0,
   },
-  menuItemAllergens: {
+  menuItemAllergensCount: {
     fontSize: 14,
-    color: 'red',
-    marginTop: 4,
+    color: '#ff4d4d', // defined red
+    marginTop: -20,
+    marginBottom: 20,
+    textAlign: 'center',
   },
-  backButton: {
+  allergenListContainer: {
+    width: '100%',
+    marginTop: 0,
+    marginBottom: 20,
+    alignItems: 'center',
+    justifyContent: 'flex-end',
+  },
+  menuItemAllergensExpanded: {
+    fontSize: 14,
+    color: '#000',
+    fontWeight: 'bold',
+  },
+  allergenRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  allergenText: {
+    color: '#000',
+    fontSize: 14,
+  },
+  profileButton: {
     position: 'absolute',
-    left: 20,
-    top: 30,
+    right: 20,
+    top: 20,
     zIndex: 10,
+    backgroundColor: '#f2f2f7',
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    justifyContent: 'center',
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
   },
-  backText: {
-    fontSize: 16,
-    color: '#007bff',
+  profileIcon: {
+    fontSize: 24,
   },
 });

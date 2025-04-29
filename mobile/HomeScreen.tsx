@@ -12,6 +12,11 @@ import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { BASE_URL } from './config';
+import {
+  TapGestureHandler,
+  TapGestureHandlerEventPayload,
+  GestureEvent,
+} from 'react-native-gesture-handler';
 
 interface Restaurant {
   id: string;

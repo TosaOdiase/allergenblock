@@ -7,5 +7,9 @@
   },
   "devDependencies": {
     "concurrently": "^8.2.2"
+  },
+  "dependencies": {
+    "@react-navigation/stack": "^7.2.10",
+    "mongodb": "^6.16.0"
   }
-} 
+}
